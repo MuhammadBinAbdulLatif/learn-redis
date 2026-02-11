@@ -15,4 +15,7 @@ export function getKeyName(...args: string[]) {
 // making sure "restaurants" spelling is always constant
 export const restaurantKeyById=(id: string)=> getKeyName("restaurants", id)
 
+export const reviewKeyById = (id: string) => getKeyName("reviews", id)
+
+export const reviewDetailsKeyById= (id: string) => getKeyName("review_details", id)
 
