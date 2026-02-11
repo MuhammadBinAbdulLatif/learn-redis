@@ -6,6 +6,7 @@ import { nanoid } from "nanoid"
 import { restaurantKeyById } from "../utils/keys.js"
 import { successResponse } from "../utils/responses.js"
 import { Request } from "express"
+import { checkRestaurantExists } from "../middlewares/checkRestaurantId.js"
 const router  = express.Router()
 router.post("/", validate(RestaurantSchema),async(req, res, next)=> {
   const data = req.body as Restaurant
@@ -24,13 +25,15 @@ router.post("/", validate(RestaurantSchema),async(req, res, next)=> {
     next(error)
   }
 })
-router.get("/:restaurantId", async (req: Request<{restaurantId: string}>, res, next )=> {
+router.get("/:restaurantId",checkRestaurantExists,  async (req: Request<{restaurantId: string}>, res, next )=> {
   const {restaurantId} = req.params
   try {
     const client = await initializeRedisClient()
     const restaurantKey = restaurantKeyById(restaurantId)
     // this is hGetAll because if you use hGet, it give only the specified field from a hash map while the getAll returns every single field of the given hash
-    const restaurant = await client.hGetAll(restaurantKey)
+    // increment the view count by 1 so to keep track of how many times a specific hash is accessed. Not good in production
+    // VIEWCOUNT CALCULATION IS NOT GOOD FOR PRODUCTION
+    const [_,restaurant] = await Promise.all([client.hIncrBy(restaurantKey,"viewCount", 1),client.hGetAll(restaurantKey)])
     console.log(restaurantKey)
     console.log(restaurant)
     return successResponse(res, restaurant)
