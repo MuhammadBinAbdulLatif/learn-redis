@@ -3,7 +3,7 @@ import { validate } from "../middlewares/validate.js"
 import { Restaurant, RestaurantSchema } from "../schemas/restaurant.js"
 import { initializeRedisClient } from "../utils/client.js"
 import { nanoid } from "nanoid"
-import { restaurantKeyById, reviewDetailsKeyById, reviewKeyById } from "../utils/keys.js"
+import { cuisineKey, cuisinesKey, restaurantCuisinesKeyById, restaurantKeyById, reviewDetailsKeyById, reviewKeyById } from "../utils/keys.js"
 import { errorResponse, successResponse } from "../utils/responses.js"
 import { Request } from "express"
 import { checkRestaurantExists } from "../middlewares/checkRestaurantId.js"
@@ -18,8 +18,13 @@ router.post("/", validate(RestaurantSchema),async(req, res, next)=> {
   // Hashes in redis allow you to store objects. Accpet that it is of depth 1. Which basically means that there can be no hash with in a hash and no array with in a hash. And hence dept or degree of 1
   const hashData = {id, name: data.name, location: data.location};
   // first argument that this hset or hash set accepts is the key, and then the value which should be a hash. 
-  const addResult = await client.hSet(restaurantKey, hashData)
-  console.log(`Added ${addResult}`)
+   await Promise.all([
+  ...data.cuisines.map(cuisine => Promise.all([
+    client.sAdd(cuisinesKey, cuisine),
+    client.sAdd(cuisineKey(cuisine), id),
+    client.sAdd(restaurantCuisinesKeyById(id), cuisine)
+  ])),
+  client.hSet(restaurantKey, hashData)])
   return successResponse(res, hashData, "Added new restaurant")
 
   } catch (error) {
@@ -93,12 +98,12 @@ router.get("/:restaurantId",checkRestaurantExists,  async (req: Request<{restaur
     // this is hGetAll because if you use hGet, it give only the specified field from a hash map while the getAll returns every single field of the given hash
     // increment the view count by 1 so to keep track of how many times a specific hash is accessed. Not good in production
     // VIEWCOUNT CALCULATION IS NOT GOOD FOR PRODUCTION
-    const [_,restaurant] = await Promise.all([client.hIncrBy(restaurantKey,"viewCount", 1),client.hGetAll(restaurantKey)])
-    console.log(restaurantKey)
-    console.log(restaurant)
-    return successResponse(res, restaurant)
+    const [_,restaurant, cuisines] = await Promise.all([client.hIncrBy(restaurantKey,"viewCount", 1),client.hGetAll(restaurantKey), client.sMembers(restaurantCuisinesKeyById(restaurantId))])
+    console.log(cuisines)
+    return successResponse(res, {...restaurant, cuisines})
   } catch (error) {
     next(error)
   }
 })
+
 export default router
