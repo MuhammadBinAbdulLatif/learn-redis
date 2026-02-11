@@ -1,10 +1,10 @@
 import express from "express"
-import { validate } from "./utils/middlewares/validate.js"
-import { Restaurant, RestaurantSchema } from "./schemas/restaurant.js"
-import { initializeRedisClient } from "./utils/client.js"
+import { validate } from "../utils/middlewares/validate.js"
+import { Restaurant, RestaurantSchema } from "../schemas/restaurant.js"
+import { initializeRedisClient } from "../utils/client.js"
 import { nanoid } from "nanoid"
-import { restaurantKeyById } from "./utils/keys.js"
-import { successResponse } from "./utils/responses.js"
+import { restaurantKeyById } from "../utils/keys.js"
+import { successResponse } from "../utils/responses.js"
 import { Request } from "express"
 const router  = express.Router()
 router.post("/", validate(RestaurantSchema),async(req, res, next)=> {
