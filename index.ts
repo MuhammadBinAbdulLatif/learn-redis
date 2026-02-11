@@ -1,7 +1,7 @@
 import express from "express"
 import restaurantRouter from "./routes/restaurants.js"
 import cursineRouter  from "./routes/cuisines.js"
-import { errorHandler } from "./utils/middlewares/errorHandler.js"
+import { errorHandler } from "./middlewares/errorHandler.js"
 const PORT  = process.env.PORT || 3000
 
 const app = express()

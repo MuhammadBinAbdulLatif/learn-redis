@@ -1,5 +1,5 @@
 import express from "express"
-import { validate } from "../utils/middlewares/validate.js"
+import { validate } from "../middlewares/validate.js"
 import { Restaurant, RestaurantSchema } from "../schemas/restaurant.js"
 import { initializeRedisClient } from "../utils/client.js"
 import { nanoid } from "nanoid"
