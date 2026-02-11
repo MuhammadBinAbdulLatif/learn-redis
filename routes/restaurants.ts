@@ -3,7 +3,7 @@ import { validate } from "../middlewares/validate.js"
 import { Restaurant, RestaurantSchema } from "../schemas/restaurant.js"
 import { initializeRedisClient } from "../utils/client.js"
 import { nanoid } from "nanoid"
-import { cuisineKey, cuisinesKey, restaurantCuisinesKeyById, restaurantKeyById, reviewDetailsKeyById, reviewKeyById } from "../utils/keys.js"
+import { cuisineKey, cuisinesKey, restaurantByRatingKey, restaurantCuisinesKeyById, restaurantKeyById, reviewDetailsKeyById, reviewKeyById } from "../utils/keys.js"
 import { errorResponse, successResponse } from "../utils/responses.js"
 import { Request } from "express"
 import { checkRestaurantExists } from "../middlewares/checkRestaurantId.js"
@@ -24,7 +24,11 @@ router.post("/", validate(RestaurantSchema),async(req, res, next)=> {
     client.sAdd(cuisineKey(cuisine), id),
     client.sAdd(restaurantCuisinesKeyById(id), cuisine)
   ])),
-  client.hSet(restaurantKey, hashData)])
+  client.hSet(restaurantKey, hashData),
+   client.zAdd(restaurantByRatingKey, {
+     score: 0,
+     value: id
+   })])
   return successResponse(res, hashData, "Added new restaurant")
 
   } catch (error) {
@@ -36,6 +40,7 @@ router.post("/:restaurantId/reviews", checkRestaurantExists, validate(ReviewSche
   const {restaurantId} = req.params
   const data = req.body as Review
   try {
+    const restaurantkey= restaurantKeyById(restaurantId) 
     const client = await initializeRedisClient()
     const reviewId = nanoid()
     const reviewKey = reviewKeyById(restaurantId)
@@ -43,7 +48,16 @@ router.post("/:restaurantId/reviews", checkRestaurantExists, validate(ReviewSche
     const reviewData = {
       id: reviewId, ...data, timestam: Date.now(), restaurantId
     }
-    await Promise.all([client.lPush(reviewKey, reviewId), client.hSet(reviewDetailsKey, reviewData)])
+    const [review_count, setResult, totalStars] = await Promise.all([client.lPush(reviewKey, reviewId), client.hSet(reviewDetailsKey, reviewData),
+    client.hIncrByFloat(restaurantkey,"totalStars", data.rating)])
+    const averageRating = Number((totalStars / review_count).toFixed(1))
+    await Promise.all([
+      client.zAdd(restaurantByRatingKey, {
+        score: averageRating,
+        value: restaurantId
+      }),
+      client.hSet(restaurantkey, "avgStars", averageRating),
+    ])
     return successResponse(res,  reviewData, "Successfully created a review" )
   } catch(error) {
     next(error)
@@ -66,6 +80,22 @@ router.get("/:restaurantId/reviews", checkRestaurantExists, async (req: Request<
       return client.hGetAll(reviewDetailsKeyById(id))
     }))
     return successResponse(res, reviews);
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get("/", async(req, res, next)=> {
+  const {page =1, limit = 10} = req.query;
+  const start = (Number(page) -1) * Number(limit)
+  const end = start + Number(limit)
+  try {
+    const client = await initializeRedisClient()
+    const restaurantIds = await client.zRange(restaurantByRatingKey, start, end, {
+      REV: true
+    })
+    const restaurant  = await Promise.all(restaurantIds.map(id => client.hGetAll(restaurantKeyById(id))))
+    return successResponse(res,restaurant)
   } catch (error) {
     next(error)
   }
