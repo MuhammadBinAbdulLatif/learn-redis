@@ -3,7 +3,7 @@ import { validate } from "../middlewares/validate.js"
 import { Restaurant, RestaurantSchema } from "../schemas/restaurant.js"
 import { initializeRedisClient } from "../utils/client.js"
 import { nanoid } from "nanoid"
-import { cuisineKey, cuisinesKey, restaurantByRatingKey, restaurantCuisinesKeyById, restaurantKeyById, reviewDetailsKeyById, reviewKeyById } from "../utils/keys.js"
+import { cuisineKey, cuisinesKey, restaurantByRatingKey, restaurantCuisinesKeyById, restaurantKeyById, reviewDetailsKeyById, reviewKeyById, weatherKeyById } from "../utils/keys.js"
 import { errorResponse, successResponse } from "../utils/responses.js"
 import { Request } from "express"
 import { checkRestaurantExists } from "../middlewares/checkRestaurantId.js"
@@ -36,6 +36,36 @@ router.post("/", validate(RestaurantSchema),async(req, res, next)=> {
   }
 })
 
+router.get("/:restaurantId/weather", checkRestaurantExists, async(req: Request<{restaurantId: string}>, res, next)=> {
+  const {restaurantId} = req.params
+  try {
+    const client = await initializeRedisClient()
+    const weatherKey = weatherKeyById(restaurantId)
+    const cachedWeather = await client.get(weatherKey)
+    if (cachedWeather) {
+      console.log("The cache was hit")
+      return successResponse(res, JSON.parse(cachedWeather));
+    }
+    const restaurantKey = restaurantKeyById(restaurantId)
+    const coords = await client.hGet(restaurantKey, "location")
+    if (!coords) {
+      return errorResponse(res, 404, "Coordinates have not been found")
+
+    }
+    const [lng, lat] = coords.split(',')
+    const apiResponse = await fetch(`https://api.openweathermap.org/data/3.0/onecall?units=imperial&lat=${lat}&lon=${lng}&appid=${process.env.WEATHER_API_KEY}`)
+    console.log(apiResponse)
+    if(apiResponse.status === 200) {
+      const json = await apiResponse.json()
+      await client.set(weatherKey, JSON.stringify(json))
+      return successResponse(res, json)
+    }
+    return errorResponse(res, 500, "Couldn't fetch weather info")
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.post("/:restaurantId/reviews", checkRestaurantExists, validate(ReviewSchema), async (req: Request<{restaurantId: string}>, res, next) => {
   const {restaurantId} = req.params
   const data = req.body as Review
@@ -50,7 +80,7 @@ router.post("/:restaurantId/reviews", checkRestaurantExists, validate(ReviewSche
     }
     const [review_count, setResult, totalStars] = await Promise.all([client.lPush(reviewKey, reviewId), client.hSet(reviewDetailsKey, reviewData),
     client.hIncrByFloat(restaurantkey,"totalStars", data.rating)])
-    const averageRating = Number((totalStars / review_count).toFixed(1))
+    const averageRating = Number((totalStars as any / review_count).toFixed(1))
     await Promise.all([
       client.zAdd(restaurantByRatingKey, {
         score: averageRating,
